@@ -71,8 +71,8 @@ export async function paginateRaw<
   const [items, total] = await Promise.all(promises);
 
   return createPaginationObject<T, CustomMetaType>({
-    items,
-    totalItems: total,
+    items: items as T[],
+    totalItems: total as number,
     currentPage: page,
     limit,
     route,
@@ -176,22 +176,24 @@ async function paginateRepository<T, CustomMetaType = IPaginationMeta>(
     });
   }
 
-  const promises: [Promise<T[]>, Promise<number> | undefined] = [
-    repository.find({
+  let data: [T[], number] | T[];
+  let items: T[];
+  let total: number | undefined = undefined;
+  if (countQueries) {
+    data = await repository.findAndCount({
       skip: limit * (page - 1),
       take: limit,
       ...searchOptions,
-    }),
-    undefined,
-  ];
-
-  if (countQueries) {
-    promises[1] = repository.count({
+    });
+    items = data[0];
+    total = data[1];
+  } else {
+    items = await repository.find({
+      skip: limit * (page - 1),
+      take: limit,
       ...searchOptions,
     });
   }
-
-  const [items, total] = await Promise.all(promises);
 
   return createPaginationObject<T, CustomMetaType>({
     items,
@@ -211,21 +213,21 @@ async function paginateQueryBuilder<T, CustomMetaType = IPaginationMeta>(
   const [page, limit, route, paginationType, countQueries, cacheOption] =
     resolveOptions(options);
 
-  const promises: [Promise<T[]>, Promise<number> | undefined] = [
-    (PaginationTypeEnum.LIMIT_AND_OFFSET === paginationType
-      ? queryBuilder.limit(limit).offset((page - 1) * limit)
-      : queryBuilder.take(limit).skip((page - 1) * limit)
-    )
-      .cache(cacheOption)
-      .getMany(),
-    undefined,
-  ];
+  (PaginationTypeEnum.LIMIT_AND_OFFSET === paginationType
+    ? queryBuilder.limit(limit).offset((page - 1) * limit)
+    : queryBuilder.take(limit).skip((page - 1) * limit)
+  ).cache(cacheOption);
 
+  let data: [T[], number] | T[];
+  let items: T[];
+  let total: number | undefined = undefined;
   if (countQueries) {
-    promises[1] = countQuery(queryBuilder, cacheOption);
+    data = await queryBuilder.getManyAndCount();
+    items = data[0];
+    total = data[1];
+  } else {
+    items = await queryBuilder.getMany();
   }
-
-  const [items, total] = await Promise.all(promises);
 
   return createPaginationObject<T, CustomMetaType>({
     items,
